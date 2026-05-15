@@ -1,5 +1,4 @@
-# Collaborative Whiteboard
-
+# Doodle Room
 A collaborate whiteboard made to draw with friends. This is an initial draft I had for an indea to make a team based version of skribbl.io, where multiple people can participate together to draw out different objects/words that people can guess. Currently only works as a whiteboard.
 
 ## How it works
