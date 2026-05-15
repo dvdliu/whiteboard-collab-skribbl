@@ -101,13 +101,3 @@ Pulled in by Maven from `pom.xml`:
 - [`Gson`](https://github.com/google/gson) — JSON serialization
 - `slf4j-simple` — logging
 
-## Troubleshooting
-
-**Port 8080 already in use.** Check with `ss -tlnp | grep :8080` (Linux/WSL) or `netstat -ano | findstr :8080` (Windows). Either stop the other process or pass a different port: `./start-server.sh 9090` (and update the WebSocket URL in `index.html` to match).
-
-**`404 WebSocket Upgrade Failure` in the browser.** Usually one of:
-- Something else is on port 8080 returning a normal 404. See above.
-- On WSL2, the Windows ↔ Linux localhost forwarder failed. Try `curl -i http://localhost:8080/` from inside WSL to confirm the server is reachable, or connect using WSL's IP from `hostname -I`.
-- Hard refresh the browser with `Ctrl+Shift+R` to clear cached responses.
-
-**Build fails with "class not found" or filename errors.** Java requires `.java` (lowercase) and the filename must match the public class name. The `start-server.sh` script auto-corrects this if you ever drop loose `.java` files at the repo root.
