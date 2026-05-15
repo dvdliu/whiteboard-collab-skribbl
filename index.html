@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Whiteboard — Collaborative Drawing</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f10;
+    --surface: #1a1a1e;
+    --surface2: #242428;
+    --border: #2e2e34;
+    --text: #f0f0f0;
+    --muted: #888;
+    --radius: 10px;
+
+    --c-purple: #7F77DD;
+    --c-teal:   #1D9E75;
+    --c-coral:  #D85A30;
+    --c-pink:   #D4537E;
+    --c-blue:   #378ADD;
+    --c-green:  #639922;
+    --c-amber:  #BA7517;
+    --c-red:    #E24B4A;
+    --c-white:  #ffffff;
+    --c-black:  #1a1a1e;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', 'Courier New', monospace;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+    flex-shrink: 0;
+    z-index: 20;
+  }
+
+  .topbar-title {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-right: 8px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a8c5c;
+    flex-shrink: 0;
+    animation: pulse 2.5s infinite;
+  }
+
+  .status-dot.offline { background: #E24B4A; animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+
+  .status-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .topbar-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+
+  .users-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: #fff;
+    border: 2px solid var(--bg);
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+
+  .user-avatar:hover { transform: scale(1.15); }
+
+  .topbar-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .topbar-btn:hover { border-color: var(--muted); color: var(--text); }
+  .topbar-btn.danger:hover { border-color: #E24B4A; color: #E24B4A; }
+
+  /* ── LAYOUT ── */
+  .workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── TOOLBAR (LEFT) ── */
+  .toolbar {
+    width: 60px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .tool-btn {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 18px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    position: relative;
+  }
+
+  .tool-btn:hover { background: var(--surface2); color: var(--text); }
+  .tool-btn.active { background: var(--surface2); color: var(--text); border-color: var(--border); }
+
+  .tool-sep { width: 28px; height: 1px; background: var(--border); margin: 4px 0; }
+
+  /* ── CANVAS AREA ── */
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #ffffff;
+    cursor: crosshair;
+  }
+
+  #canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+
+  /* Remote cursors */
+  .remote-cursor {
+    position: absolute;
+    pointer-events: none;
+    transition: left 0.05s, top 0.05s;
+    z-index: 5;
+  }
+
+  .remote-cursor svg { display: block; }
+
+  .remote-cursor-label {
+    position: absolute;
+    top: 18px;
+    left: 8px;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    color: #fff;
+  }
+
+  /* ── RIGHT PANEL ── */
+  .panel {
+    width: 200px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .panel-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* Color palette */
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .color-swatch {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+
+  .color-swatch:hover { transform: scale(1.12); }
+  .color-swatch.active { border-color: #fff; }
+
+  /* Brush size */
+  .brush-slider { width: 100%; accent-color: var(--c-purple); }
+
+  .brush-preview-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    margin-top: 8px;
+  }
+
+  #brush-preview {
+    background: #333;
+    border-radius: 50%;
+    transition: width 0.1s, height 0.1s;
+  }
+
+  /* Activity log */
+  .activity-log {
+    flex: 1;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+  }
+
+  .log-entry {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .log-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  /* ── JOIN MODAL ── */
+  .modal-wrap {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal h2 {
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  .modal p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  .modal input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 14px;
+    outline: none;
+  }
+
+  .modal input:focus { border-color: var(--c-purple); }
+
+  .modal-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--c-purple);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity 0.15s;
+  }
+
+  .modal-btn:hover { opacity: 0.85; }
+
+  .ws-note { font-size: 11px; color: var(--muted); text-align: center; }
+
+  /* Tooltip */
+  [data-tip] {
+    position: relative;
+  }
+
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 110%;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text);
+    pointer-events: none;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<!-- JOIN MODAL -->
+<div class="modal-wrap" id="modal">
+  <div class="modal">
+    <h2>Join the whiteboard</h2>
+    <p>Enter your name to start drawing. Your color will be assigned automatically. Open this page in multiple tabs to collaborate.</p>
+    <input id="name-input" type="text" placeholder="Your name..." maxlength="24" autofocus />
+    <button class="modal-btn" id="join-btn">Join →</button>
+    <div class="ws-note">Connects to ws://localhost:8080</div>
+  </div>
+</div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <span class="topbar-title">Whiteboard</span>
+  <div class="status-dot offline" id="status-dot"></div>
+  <span class="status-label" id="status-label">Disconnected</span>
+  <div class="topbar-sep"></div>
+  <span class="status-label" id="peer-count">0 online</span>
+
+  <div class="users-row" id="users-row"></div>
+
+  <button class="topbar-btn danger" id="clear-btn">Clear all</button>
+  <button class="topbar-btn" id="save-btn">Save PNG</button>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- LEFT TOOLBAR -->
+  <div class="toolbar">
+    <button class="tool-btn active" id="tool-pen" data-tip="Pen" aria-label="Pen tool">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+    </button>
+    <button class="tool-btn" id="tool-line" data-tip="Line" aria-label="Line tool">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="5" y1="19" x2="19" y2="5"/>
+      </svg>
+    </button>
+    <button class="tool-btn" id="tool-eraser" data-tip="Eraser" aria-label="Eraser tool">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M20 20H7L3 16l10-10 7 7-2.5 2.5"/>
+        <path d="M6.5 17.5l5-5"/>
+      </svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" id="tool-undo" data-tip="Undo" aria-label="Undo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M9 14L4 9l5-5"/>
+        <path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- CANVAS -->
+  <div class="canvas-wrap" id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="panel">
+    <div class="panel-section">
+      <div class="panel-label">Color</div>
+      <div class="color-grid" id="color-grid">
+        <div class="color-swatch active" style="background:#7F77DD" data-color="#7F77DD"></div>
+        <div class="color-swatch" style="background:#1D9E75" data-color="#1D9E75"></div>
+        <div class="color-swatch" style="background:#D85A30" data-color="#D85A30"></div>
+        <div class="color-swatch" style="background:#D4537E" data-color="#D4537E"></div>
+        <div class="color-swatch" style="background:#378ADD" data-color="#378ADD"></div>
+        <div class="color-swatch" style="background:#639922" data-color="#639922"></div>
+        <div class="color-swatch" style="background:#BA7517" data-color="#BA7517"></div>
+        <div class="color-swatch" style="background:#E24B4A" data-color="#E24B4A"></div>
+        <div class="color-swatch" style="background:#ffffff; border:1px solid #333" data-color="#ffffff"></div>
+        <div class="color-swatch" style="background:#1a1a1e; border:1px solid #444" data-color="#1a1a1e"></div>
+        <div class="color-swatch" style="background:#F0997B" data-color="#F0997B"></div>
+        <div class="color-swatch" style="background:#AFA9EC" data-color="#AFA9EC"></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Brush size — <span id="brush-val">4</span>px</div>
+      <input type="range" class="brush-slider" id="brush-slider" min="1" max="32" value="4" step="1" />
+      <div class="brush-preview-wrap">
+        <div id="brush-preview" style="width:4px;height:4px"></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Activity</div>
+    </div>
+    <div class="activity-log" id="activity-log"></div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ── STATE ──
+let ws = null;
+let myUserId = null;
+let myUsername = '';
+let myColor = '#7F77DD';
+let currentTool = 'pen';
+let currentColor = '#7F77DD';
+let brushSize = 4;
+let isDrawing = false;
+let lineStart = null;
+let undoStack = [];   // array of ImageData snapshots
+let peers = {};        // userId → { username, color, avatar el, cursor el }
+
+// ── CANVAS SETUP ──
+const wrap = $('canvas-wrap');
+const canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const snapshot = canvas.toDataURL();
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0);
+  img.src = snapshot;
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ── TOOL SELECTION ──
+['pen','line','eraser'].forEach(t => {
+  $('tool-' + t).addEventListener('click', () => {
+    currentTool = t;
+    ['pen','line','eraser'].forEach(x => $('tool-' + x).classList.toggle('active', x === t));
+  });
+});
+
+// ── COLOR SWATCHES ──
+document.querySelectorAll('.color-swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    currentColor = sw.dataset.color;
+    if (currentTool === 'eraser') {
+      currentTool = 'pen';
+      $('tool-pen').classList.add('active');
+      $('tool-eraser').classList.remove('active');
+    }
+    updateBrushPreview();
+  });
+});
+
+// ── BRUSH SLIDER ──
+const brushSlider = $('brush-slider');
+const brushVal = $('brush-val');
+const brushPreview = $('brush-preview');
+
+function updateBrushPreview() {
+  const sz = Math.min(brushSize, 40);
+  brushPreview.style.width = sz + 'px';
+  brushPreview.style.height = sz + 'px';
+  brushPreview.style.background = currentTool === 'eraser' ? '#ccc' : currentColor;
+}
+
+brushSlider.addEventListener('input', () => {
+  brushSize = parseInt(brushSlider.value);
+  brushVal.textContent = brushSize;
+  updateBrushPreview();
+});
+
+updateBrushPreview();
+
+// ── UNDO ──
+function pushUndo() {
+  if (undoStack.length > 30) undoStack.shift();
+  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+}
+
+$('tool-undo').addEventListener('click', () => {
+  if (undoStack.length) {
+    const snap = undoStack.pop();
+    ctx.putImageData(snap, 0, 0);
+  }
+});
+
+// ── DRAWING ──
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function applyDraw(event) {
+  ctx.lineWidth = event.brushSize || brushSize;
+  ctx.strokeStyle = event.type === 'ERASER' ? '#ffffff' : event.color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (event.startStroke) {
+    ctx.beginPath();
+    ctx.moveTo(event.x, event.y);
+  } else {
+    ctx.lineTo(event.x, event.y);
+    ctx.stroke();
+  }
+}
+
+function applyLine(event) {
+  ctx.lineWidth = event.brushSize;
+  ctx.strokeStyle = event.color;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(event.x, event.y);
+  ctx.lineTo(event.x2, event.y2);
+  ctx.stroke();
+}
+
+// Temp canvas for live line preview
+let previewCanvas = null;
+let previewCtx = null;
+
+function ensurePreview() {
+  if (!previewCanvas) {
+    previewCanvas = document.createElement('canvas');
+    previewCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2';
+    wrap.appendChild(previewCanvas);
+  }
+  previewCanvas.width = canvas.width;
+  previewCanvas.height = canvas.height;
+  previewCtx = previewCanvas.getContext('2d');
+}
+
+// Mouse / touch events
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const pos = getPos(e);
+  pushUndo();
+
+  if (currentTool === 'line') {
+    ensurePreview();
+    lineStart = pos;
+    isDrawing = true;
+    return;
+  }
+
+  isDrawing = true;
+  const color = currentTool === 'eraser' ? '#ffffff' : currentColor;
+  ctx.lineWidth = brushSize;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+
+  send({ type:'DRAW', x:pos.x, y:pos.y, color, brushSize, startStroke:true });
+});
+
+canvas.addEventListener('pointermove', e => {
+  e.preventDefault();
+  const pos = getPos(e);
+
+  // Broadcast cursor
+  send({ type:'CURSOR', x:pos.x, y:pos.y });
+
+  if (!isDrawing) return;
+
+  if (currentTool === 'line') {
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    previewCtx.lineWidth = brushSize;
+    previewCtx.strokeStyle = currentColor;
+    previewCtx.lineCap = 'round';
+    previewCtx.beginPath();
+    previewCtx.moveTo(lineStart.x, lineStart.y);
+    previewCtx.lineTo(pos.x, pos.y);
+    previewCtx.stroke();
+    return;
+  }
+
+  const color = currentTool === 'eraser' ? '#ffffff' : currentColor;
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  send({ type:'DRAW', x:pos.x, y:pos.y, color, brushSize, startStroke:false });
+});
+
+canvas.addEventListener('pointerup', e => {
+  e.preventDefault();
+  if (!isDrawing) return;
+  isDrawing = false;
+
+  if (currentTool === 'line') {
+    const pos = getPos(e);
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    applyLine({ x:lineStart.x, y:lineStart.y, x2:pos.x, y2:pos.y, color:currentColor, brushSize });
+    send({ type:'LINE', x:lineStart.x, y:lineStart.y, x2:pos.x, y2:pos.y, color:currentColor, brushSize });
+    lineStart = null;
+  }
+});
+
+canvas.addEventListener('pointerleave', () => { isDrawing = false; });
+
+// ── CLEAR ──
+$('clear-btn').addEventListener('click', () => {
+  if (!confirm('Clear the board for everyone?')) return;
+  pushUndo();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  send({ type:'CLEAR' });
+});
+
+// ── SAVE ──
+$('save-btn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'whiteboard.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
+
+// ── WEBSOCKET ──
+function send(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ ...data, userId: myUserId }));
+  }
+}
+
+function connect(username) {
+  myUsername = username;
+  ws = new WebSocket('ws://localhost:8080');
+
+  ws.onopen = () => {
+    myUserId = 'user_' + Math.random().toString(36).slice(2, 8);
+    ws.send(JSON.stringify({ type:'USER_JOIN', username }));
+    setStatus(true);
+  };
+
+  ws.onmessage = e => handleServerEvent(JSON.parse(e.data));
+
+  ws.onclose = () => {
+    setStatus(false);
+    logActivity('Disconnected from server', '#E24B4A');
+  };
+
+  ws.onerror = () => {
+    logActivity('Connection error — is the Java server running?', '#E24B4A');
+  };
+}
+
+function setStatus(online) {
+  $('status-dot').className = 'status-dot' + (online ? '' : ' offline');
+  $('status-label').textContent = online ? 'Connected' : 'Disconnected';
+}
+
+// ── SERVER EVENT HANDLER ──
+function handleServerEvent(ev) {
+  switch (ev.type) {
+    case 'DRAW':
+      if (ev.userId === myUserId) return;
+      applyDraw(ev);
+      break;
+
+    case 'LINE':
+      if (ev.userId === myUserId) return;
+      applyLine(ev);
+      break;
+
+    case 'CLEAR':
+      pushUndo();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      logActivity((ev.username || 'Someone') + ' cleared the board', ev.color);
+      break;
+
+    case 'CURSOR':
+      updateRemoteCursor(ev);
+      break;
+
+    case 'USER_JOIN':
+      if (ev.userId !== myUserId) {
+        addPeer(ev.userId, ev.username, ev.color);
+        logActivity(ev.username + ' joined', ev.color);
+      } else {
+        myColor = ev.color;
+      }
+      updatePeerCount();
+      break;
+
+    case 'USER_LEAVE':
+      removePeer(ev.userId);
+      logActivity((ev.username || 'Someone') + ' left', '#888');
+      updatePeerCount();
+      break;
+  }
+}
+
+// ── PEER MANAGEMENT ──
+function addPeer(userId, username, color) {
+  if (peers[userId]) return;
+
+  // Avatar in topbar
+  const av = document.createElement('div');
+  av.className = 'user-avatar';
+  av.style.background = color;
+  av.title = username;
+  av.textContent = username.slice(0,2).toUpperCase();
+  $('users-row').appendChild(av);
+
+  // Remote cursor
+  const cur = document.createElement('div');
+  cur.className = 'remote-cursor';
+  cur.innerHTML = `
+    <svg width="16" height="20" viewBox="0 0 16 20">
+      <path d="M0 0 L0 16 L4 12 L7 19 L9 18 L6 11 L11 11 Z" fill="${color}" stroke="#fff" stroke-width="1"/>
+    </svg>
+    <div class="remote-cursor-label" style="background:${color}">${username}</div>
+  `;
+  cur.style.left = '-100px';
+  cur.style.top = '-100px';
+  wrap.appendChild(cur);
+
+  peers[userId] = { username, color, avatar: av, cursor: cur };
+}
+
+function removePeer(userId) {
+  const peer = peers[userId];
+  if (!peer) return;
+  peer.avatar.remove();
+  peer.cursor.remove();
+  delete peers[userId];
+}
+
+function updateRemoteCursor(ev) {
+  const peer = peers[ev.userId];
+  if (!peer) return;
+  peer.cursor.style.left = ev.x + 'px';
+  peer.cursor.style.top = ev.y + 'px';
+}
+
+function updatePeerCount() {
+  const count = Object.keys(peers).length + 1;
+  $('peer-count').textContent = count + ' online';
+}
+
+// ── ACTIVITY LOG ──
+function logActivity(msg, color) {
+  const log = $('activity-log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const dot = document.createElement('div');
+  dot.className = 'log-dot';
+  dot.style.background = color || '#888';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  entry.appendChild(dot);
+  entry.appendChild(text);
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+
+  // Keep log bounded
+  while (log.children.length > 40) log.removeChild(log.firstChild);
+}
+
+// ── JOIN MODAL ──
+function joinBoard() {
+  const name = $('name-input').value.trim() || 'Anonymous';
+  $('modal').style.display = 'none';
+  logActivity('You joined as ' + name, '#7F77DD');
+  connect(name);
+  updatePeerCount();
+}
+
+$('join-btn').addEventListener('click', joinBoard);
+$('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') joinBoard(); });
+</script>
+</body>
+</html>
